@@ -18,13 +18,11 @@ function App() {
     { title: "Ms. Incognito", score: 0, watching: true },
   ]
 
-  const renderStars = (score: number) => {
+  const renderRating = (score: number) => {
     return (
-      <div className="stars">
-        {[1, 2, 3].map((star) => (
-          <span key={star} className={star <= score ? "star filled" : "star"}>
-            ★
-          </span>
+      <div className="rating">
+        {Array.from({ length: score }, (_, i) => (
+          <span key={i} className="dot"></span>
         ))}
       </div>
     )
@@ -33,7 +31,7 @@ function App() {
   return (
     <div className="container">
       <h1>2025</h1>
-      <p className="subtitle">★ Good · ★★ Great · ★★★ Loved it</p>
+      <p className="subtitle">● Liked · ●● Really liked · ●●● Loved</p>
       <div className="shows-list">
         {shows.map((show, index) => (
           <div key={index} className="show-item">
@@ -41,7 +39,7 @@ function App() {
               <span className="show-title">{show.title}</span>
               {show.watching && <span className="watching-badge">watching</span>}
             </div>
-            {renderStars(show.score)}
+            {renderRating(show.score)}
           </div>
         ))}
       </div>
