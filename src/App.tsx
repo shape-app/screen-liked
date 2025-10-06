@@ -32,7 +32,7 @@ function App() {
 
   return (
     <div className="container">
-      <h1>2025 Shows</h1>
+      <h1>2025</h1>
       <div className="shows-list">
         {shows.map((show, index) => (
           <div key={index} className="show-item">
