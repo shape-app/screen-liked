@@ -33,6 +33,7 @@ function App() {
   return (
     <div className="container">
       <h1>2025</h1>
+      <p className="subtitle">★ Good · ★★ Great · ★★★ Loved it</p>
       <div className="shows-list">
         {shows.map((show, index) => (
           <div key={index} className="show-item">
