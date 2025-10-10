@@ -7,7 +7,7 @@
 
 ## Executive Summary
 
-A web application for sharing and celebrating shows/movies you enjoyed with a 3-dot rating system (Liked/Really Liked/Loved). Users create a personal collection of their favorite content and get a shareable public profile at `/u/{username}` to share their taste with friends.
+A web application for tracking and sharing shows/movies you enjoyed with a 3-dot rating system (Liked/Really Liked/Loved). Users create a personal collection of their favorite content and get a shareable public profile at `/u/{username}` to share their taste with friends.
 
 ### Key Decisions
 - **Backend**: Supabase (PostgreSQL BaaS) - No vendor lock-in, easy migration path
@@ -24,9 +24,9 @@ A web application for sharing and celebrating shows/movies you enjoyed with a 3-
 ---
 
 ## Project Overview
-A web application for sharing and celebrating shows/movies you enjoyed. Users curate their personal collection with a 3-dot rating system and share their taste through public profiles.
+A web application for tracking and sharing shows/movies you enjoyed. Users curate their personal collection with a 3-dot rating system and share their taste through public profiles.
 
-**Key Concept**: Only content you enjoyed makes it to your list - this is a celebration of what you loved, not a comprehensive watch history.
+**Key Concept**: Only content you enjoyed makes it to your list - this is your curated collection of what you loved, not a comprehensive watch history.
 
 ## Core Features (MVP)
 1. User authentication and management (email/password)
@@ -214,40 +214,64 @@ supabase.auth.signInWithOAuth({ provider: 'google' })
 supabase.auth.signOut()
 ```
 
-### Watched Items
+### Shows or Movies
 ```typescript
-// Create
-supabase.from('watched_items').insert({ user_id, title, type })
+// Search for existing show/movie
+const { data } = await supabase
+  .from('shows_or_movies')
+  .select('*')
+  .ilike('title', `%${searchTitle}%`)
+  .eq('type', type)
 
-// Read (user's items)
-supabase.from('watched_items')
-  .select('*, ratings(*)')
-  .eq('user_id', userId)
-  .order('created_at', { ascending: false })
-
-// Update
-supabase.from('watched_items').update({ title }).eq('id', itemId)
-
-// Delete
-supabase.from('watched_items').delete().eq('id', itemId)
+// Create new show/movie
+const { data } = await supabase
+  .from('shows_or_movies')
+  .insert({ title, type, year, poster_url, tmdb_id })
+  .select()
+  .single()
 ```
 
-### Ratings
+### Watched Entries
 ```typescript
-// Add rating
-supabase.from('ratings').insert({
+// Create entry (after selecting/creating show)
+await supabase.from('watched_entries').insert({
   user_id,
-  item_id,
+  show_or_movie_id,
   rating,
-  watched_date
+  watched_date,
+  notes
 })
 
-// Get ratings by year
-supabase.from('ratings')
-  .select('*, watched_items(*)')
+// Get user's entries with show details
+const { data } = await supabase
+  .from('watched_entries')
+  .select('*, shows_or_movies(*)')
+  .eq('user_id', userId)
+  .order('watched_date', { ascending: false })
+
+// Get entries by year
+const { data } = await supabase
+  .from('watched_entries')
+  .select('*, shows_or_movies(*)')
   .eq('user_id', userId)
   .gte('watched_date', `${year}-01-01`)
   .lte('watched_date', `${year}-12-31`)
+
+// Check for duplicates (user's entries for same show)
+const { data } = await supabase
+  .from('watched_entries')
+  .select('*, shows_or_movies(*)')
+  .eq('user_id', userId)
+  .eq('show_or_movie_id', showId)
+
+// Update entry
+await supabase
+  .from('watched_entries')
+  .update({ rating, notes })
+  .eq('id', entryId)
+
+// Delete entry
+await supabase.from('watched_entries').delete().eq('id', entryId)
 ```
 
 ---
@@ -272,11 +296,14 @@ src/
 │       │   ├── LoginForm.tsx
 │       │   ├── SignupForm.tsx
 │       │   └── AuthGuard.tsx  # Protected route wrapper
-│       ├── watched-items/
-│       │   ├── WatchedItem.tsx         # Single item display
-│       │   ├── WatchedItemsList.tsx    # List view
-│       │   ├── AddItemDialog.tsx       # Add/Edit modal
-│       │   ├── ItemForm.tsx            # Form component
+│       ├── watched-entries/
+│       │   ├── WatchedEntry.tsx        # Single entry display
+│       │   ├── WatchedEntriesList.tsx  # List view
+│       │   ├── AddEntryDialog.tsx      # Add entry modal
+│       │   ├── EntryForm.tsx           # Form component
+│       │   ├── ShowSearchInput.tsx     # Search/select show with duplicate detection
+│       │   ├── DuplicateWarning.tsx    # Warning when show already exists
+│       │   ├── MultipleEntriesBadge.tsx # Indicator for multiple watch entries
 │       │   └── RatingDots.tsx          # 3-dot rating display
 │       └── profile/
 │           ├── ProfileView.tsx         # Public profile page
@@ -284,7 +311,8 @@ src/
 │           └── YearSection.tsx         # Group items by year
 ├── hooks/
 │   ├── useAuth.ts              # Auth context hook
-│   ├── useWatchedItems.ts      # TanStack Query hooks for items
+│   ├── useWatchedEntries.ts    # TanStack Query hooks for entries
+│   ├── useShowsOrMovies.ts     # TanStack Query hooks for shows/movies
 │   └── useUser.ts              # User data hook
 ├── lib/
 │   ├── supabase.ts             # Supabase client initialization
@@ -327,14 +355,16 @@ App
     ├── Login (public)
     ├── Signup (public)
     ├── Dashboard (private)
-    │   ├── WatchedItemsList
-    │   │   └── WatchedItem (with edit/delete actions)
-    │   └── AddItemDialog
-    │       └── ItemForm (with RatingDots selector)
+    │   ├── WatchedEntriesList
+    │   │   └── WatchedEntry (with edit/delete actions, multiple entries badge)
+    │   └── AddEntryDialog
+    │       ├── ShowSearchInput (with duplicate detection)
+    │       ├── DuplicateWarning (if show exists)
+    │       └── EntryForm (rating, date, notes)
     └── Profile (public)
         ├── ProfileHeader (avatar, display name, stats)
-        └── YearSection[] (grouped items by year)
-            └── WatchedItem (read-only)
+        └── YearSection[] (grouped entries by year)
+            └── WatchedEntry (read-only, multiple entries badge)
 ```
 
 ---
@@ -660,15 +690,23 @@ create table public.profiles (
   constraint username_format check (username ~ '^[a-zA-Z0-9_-]+$')
 );
 
--- Create watched_items table (shows/movies you enjoyed)
-create table public.watched_items (
+-- Create shows_or_movies table (canonical show/movie records)
+create table public.shows_or_movies (
   id uuid default gen_random_uuid() primary key,
-  user_id uuid references public.profiles(id) on delete cascade not null,
-  type text not null check (type in ('movie', 'tv_show')),
   title text not null,
+  type text not null check (type in ('movie', 'tv_show')),
   year int,
   poster_url text,
-  tmdb_id int,
+  tmdb_id int unique,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  updated_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- Create watched_entries table (user's watch records)
+create table public.watched_entries (
+  id uuid default gen_random_uuid() primary key,
+  user_id uuid references public.profiles(id) on delete cascade not null,
+  show_or_movie_id uuid references public.shows_or_movies(id) on delete cascade not null,
   rating int not null check (rating >= 1 and rating <= 3), -- 1=Liked, 2=Really Liked, 3=Loved
   watched_date date not null,
   notes text,
@@ -678,13 +716,17 @@ create table public.watched_items (
 );
 
 -- Create indexes for performance
-create index watched_items_user_id_idx on public.watched_items(user_id);
-create index watched_items_watched_date_idx on public.watched_items(watched_date);
+create index watched_entries_user_id_idx on public.watched_entries(user_id);
+create index watched_entries_show_or_movie_id_idx on public.watched_entries(show_or_movie_id);
+create index watched_entries_watched_date_idx on public.watched_entries(watched_date);
+create index shows_or_movies_title_idx on public.shows_or_movies(title);
+create index shows_or_movies_tmdb_id_idx on public.shows_or_movies(tmdb_id);
 create index profiles_username_idx on public.profiles(username);
 
 -- Enable Row Level Security
 alter table public.profiles enable row level security;
-alter table public.watched_items enable row level security;
+alter table public.shows_or_movies enable row level security;
+alter table public.watched_entries enable row level security;
 
 -- Profiles policies
 create policy "Public profiles are viewable by everyone"
@@ -695,21 +737,30 @@ create policy "Users can update own profile"
   on public.profiles for update
   using (auth.uid() = id);
 
--- Watched items policies
-create policy "Public watched items viewable by everyone"
-  on public.watched_items for select
+-- Shows or movies policies (publicly readable, users can create)
+create policy "Shows and movies viewable by everyone"
+  on public.shows_or_movies for select
   using (true);
 
-create policy "Users can insert own watched items"
-  on public.watched_items for insert
+create policy "Authenticated users can create shows/movies"
+  on public.shows_or_movies for insert
+  with check (auth.role() = 'authenticated');
+
+-- Watched entries policies
+create policy "Public watched entries viewable by everyone"
+  on public.watched_entries for select
+  using (true);
+
+create policy "Users can insert own watched entries"
+  on public.watched_entries for insert
   with check (auth.uid() = user_id);
 
-create policy "Users can update own watched items"
-  on public.watched_items for update
+create policy "Users can update own watched entries"
+  on public.watched_entries for update
   using (auth.uid() = user_id);
 
-create policy "Users can delete own watched items"
-  on public.watched_items for delete
+create policy "Users can delete own watched entries"
+  on public.watched_entries for delete
   using (auth.uid() = user_id);
 
 -- Function to create profile on signup
@@ -782,9 +833,9 @@ Then ready to start coding!
 6. **Monetization**: Free (no monetization for prototype)
 7. **Year view**: Display shows/movies by year watched (as seen in current prototype)
 
-## Simplified Data Model (Updated)
+## Data Model (Updated)
 
-### User
+### User (Profile)
 ```typescript
 {
   id: uuid (PK)
@@ -799,24 +850,48 @@ Then ready to start coding!
 - Public profile accessible at: `/u/{username}`
 - No privacy settings for MVP
 
-### WatchedItem
+### ShowOrMovie (the actual show/movie - canonical record)
 ```typescript
 {
   id: uuid (PK)
-  user_id: uuid (FK -> User)
-  type: 'movie' | 'tv_show'
   title: string
-  year?: number
+  type: 'movie' | 'tv_show'
+  year?: number          // Release year from TMDB
   poster_url?: string
-  tmdb_id?: number
-  rating: number  // 1-3 (1=Liked, 2=Really Liked, 3=Loved)
-  watched_date: date
-  notes?: string
-  watching?: boolean  // Currently watching (in progress)
+  tmdb_id?: number       // Link to TMDB for metadata
   created_at: timestamp
   updated_at: timestamp
 }
 ```
-- Simplified: rating moved into watched_item (no separate ratings table)
-- Only items you enjoyed (rating 1-3) - no negative ratings
-- Each watch is a new entry (if rewatching something you loved again, create new item)
+- One record per unique show/movie across all users
+- Shared across all users (if two users add "The Office", same record)
+- Populated from TMDB API or manual entry
+
+### WatchedEntry (user's watch record for a show/movie)
+```typescript
+{
+  id: uuid (PK)
+  user_id: uuid (FK -> User)
+  show_or_movie_id: uuid (FK -> ShowOrMovie)
+  rating: number         // 1-3 (1=Liked, 2=Really Liked, 3=Loved)
+  watched_date: date     // When you watched it (year matters for yearly view)
+  notes?: string
+  watching?: boolean     // Currently watching (in progress)
+  created_at: timestamp
+  updated_at: timestamp
+}
+```
+- Multiple entries per show/movie allowed (rewatching)
+- Only positive ratings (1-3) - no negative ratings
+- If user adds same show twice, they're linked to same ShowOrMovie record
+- UI shows indicator when multiple entries exist for same show
+
+### Duplicate Detection Flow
+When user adds a new entry:
+1. Search for existing ShowOrMovie by title (fuzzy match)
+2. If found → Show warning: "You already have entries for this show"
+3. Options:
+   - "Yes, same show" → Link to existing ShowOrMovie, create new WatchedEntry
+   - "No, different show" → Create new ShowOrMovie + WatchedEntry
+4. In list view, show indicator (e.g., underline or badge) if multiple entries exist
+5. Click indicator → See all watch history for that show/movie
