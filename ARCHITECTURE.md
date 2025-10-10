@@ -1,4 +1,4 @@
-# Watched - Architecture Plan & Tech Spec
+# DotDot - Architecture Plan & Tech Spec
 
 > **Status**: Ready for team review
 > **Version**: 1.0
@@ -7,7 +7,7 @@
 
 ## Executive Summary
 
-A web application for tracking watched shows/movies with a 3-dot rating system (Liked/Really Liked/Loved). Users can create an account, add their watched content, and get a shareable public profile at `/u/{username}` to share with friends.
+A web application for sharing and celebrating shows/movies you enjoyed with a 3-dot rating system (Liked/Really Liked/Loved). Users create a personal collection of their favorite content and get a shareable public profile at `/u/{username}` to share their taste with friends.
 
 ### Key Decisions
 - **Backend**: Supabase (PostgreSQL BaaS) - No vendor lock-in, easy migration path
@@ -24,14 +24,16 @@ A web application for tracking watched shows/movies with a 3-dot rating system (
 ---
 
 ## Project Overview
-A web application for tracking watched shows/movies with user ratings over time (yearly view).
+A web application for sharing and celebrating shows/movies you enjoyed. Users curate their personal collection with a 3-dot rating system and share their taste through public profiles.
+
+**Key Concept**: Only content you enjoyed makes it to your list - this is a celebration of what you loved, not a comprehensive watch history.
 
 ## Core Features (MVP)
 1. User authentication and management (email/password)
-2. Add/edit/delete watched items (shows/movies)
+2. Add/edit/delete enjoyed shows/movies
 3. 3-dot rating system (1=Liked, 2=Really Liked, 3=Loved)
-4. View yearly consumption history (grouped by year)
-5. Public shareable profile at `/u/{username}`
+4. View by year (yearly consumption)
+5. Public shareable profile at `/u/{username}` - your curated taste
 6. TMDB integration for auto-fetching posters and metadata (Phase 2)
 
 ---
@@ -628,7 +630,7 @@ Compare to:
 1. Go to https://supabase.com
 2. Sign up / login
 3. Create new project:
-   - Project name: `watched`
+   - Project name: `dotdot`
    - Database password: (generate strong password)
    - Region: Choose closest to target users
 4. Wait for project to provision (~2 minutes)
@@ -658,7 +660,7 @@ create table public.profiles (
   constraint username_format check (username ~ '^[a-zA-Z0-9_-]+$')
 );
 
--- Create watched_items table
+-- Create watched_items table (shows/movies you enjoyed)
 create table public.watched_items (
   id uuid default gen_random_uuid() primary key,
   user_id uuid references public.profiles(id) on delete cascade not null,
@@ -667,7 +669,7 @@ create table public.watched_items (
   year int,
   poster_url text,
   tmdb_id int,
-  rating int not null check (rating >= 0 and rating <= 3),
+  rating int not null check (rating >= 1 and rating <= 3), -- 1=Liked, 2=Really Liked, 3=Loved
   watched_date date not null,
   notes text,
   watching boolean default false,
@@ -807,12 +809,14 @@ Then ready to start coding!
   year?: number
   poster_url?: string
   tmdb_id?: number
-  rating: number  // 1-3 (dot system)
+  rating: number  // 1-3 (1=Liked, 2=Really Liked, 3=Loved)
   watched_date: date
   notes?: string
+  watching?: boolean  // Currently watching (in progress)
   created_at: timestamp
   updated_at: timestamp
 }
 ```
 - Simplified: rating moved into watched_item (no separate ratings table)
-- Each watch is a new entry (if rewatching, create new item)
+- Only items you enjoyed (rating 1-3) - no negative ratings
+- Each watch is a new entry (if rewatching something you loved again, create new item)
